@@ -1,0 +1,33 @@
+name: FastAPI Deploy via Bastion
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드체크
+        uses: actions/checkout@v4
+
+      - name: SSH설정 Bastion서버 접속을 위한
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.BASTION_KEY }}" > ~/.ssh/deploy.key
+          chmod 600 ~/.ssh/deploy.key
+          ssh-keyscan -T 5 -H ${{ secrets.BASTION_HOST }} >> ~/.ssh/known_hosts || true
+
+      - name: app 파일 Bastion 서버에 업로드
+        run: |
+          ssh -i ~/.ssh/deploy.key ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} "mkdir -p ~/FastAPI_TMP/app && rm -rf ~/FastAPI_TMP/app/*"
+          rsync -avz -e "ssh -i ~/.ssh/deploy.key" ./app/ ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }}:~/FastAPI_TMP/app/
+
+      - name: app 파일 Bastion -> FastAPI서버로 전송 후 uvicorn 재시작
+        run: |
+          # Bastion에서 FastAPI 서버로 rsync
+          ssh -i ~/.ssh/deploy.key ${{ secrets.BASTION_USER }}@${{ secrets.BASTION_HOST }} \
+            "rsync -avz --delete /home/ubuntu/FastAPI_TMP/app/ fastapi2a:/home/ubuntu/fastapiBack1/app && \
+             ssh fastapi2a 'cd /home/ubuntu/fastapiBack1 && source .venv/bin/activate && ./start.sh'"
